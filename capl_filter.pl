@@ -141,45 +141,58 @@ sub main
         if ($line =~ /^[Oo]n\s+($eventRegex)(?:\s+(\S+))?(.*)/i) 
         {
             my $type = lc($1);          # typ in lower case (z.B. sysvar_update)
-            my $name = $2 || "";        # variable name, if none then keep empty
+            my $rawName = $2 || "";        # variable name, if none then keep empty
             my $remainder = $3;         # line remainder (comments, etc.)
+            my $fName = "";
+            my $parameters = "";
 
+            # lookup $type in mapping table
             if (!exists $eventMapping{$type})
             {
-                print STDERR "FEHLER: Typ '$type' nicht im Mapping definiert! (Zeile: $.)\n";
-                # fallback 
+                print STDERR "FEHLER: Typ '$type' not defined in Mapping ! (line: $.)\n";
+                # fallback to evMisc
                 $eventMapping{$type} = ['evMisc', 'Miscellaneous Events'];
             }
 
             # cleanup "::" for non-empty namesysVar
-            if ($name)
+            if ($rawName)
             {
-                $name =~ s/::`/_/g;
-                $name =~ s/::/_/g;
-                #$name = "_$name";       # '_' as separator
+                $rawName =~ s/::`/_/g;
+                $rawName =~ s/::/_/g;
+                $rawName =~ s/\*/_ASTERISK_/;                 #replace "*" => "_ASTERISK_"
+
+                # 
+                if ($rawName =~ /^(.*)\.(.*)$/)
+                {
+                    $fName   = "_" . $1;                    # before .
+                    $parameters = $2;                       # after .
+                }
+                else
+                {
+                    $fName   = "_" . $rawName;              # '_' as separator
+                    $parameters = "";
+                }
             }
 
             # define group und titel
             my $MODULE = uc($moduleName);
-            my $groupData  = $eventMapping{$type};
+            my $groupData  = $eventMapping{$type} || ['evMisc', 'Miscellaneous Events'];;
             my $groupIdSuffix = $groupData->[0];            # e.g. evTimer
             my $displayTitle  = $groupData->[1];            # e.g. Timer Events
 
             my $groupId     = "${moduleName}_$groupIdSuffix";
             my $groupTitle  = "$MODULE $displayTitle";
 
-            # defining group with @addtogroup (Doxygen ignores doublicate definitions with @addtogroup)
+            # Defining group with @addtogroup (Doxygen ignores doublicate definitions with @addtogroup).
             # Use @ingroup, to assigne the funtion to the correct group.
             # A void on_${type}_$name insures uniqueness of the fuction from the variable.
             # Compose the line in one step to avoid overwriting.
-            print STDERR "[$MODULE] Group:$groupId Title:$groupTitle\n";
-            print STDERR "    Name:$name Rem:$remainder\n";
+            # DEBUG:
+            #print STDERR "[$MODULE] Group:$groupId Title:$groupTitle\n";
+            #print STDERR "    Name:$fName ($parameters) Rem:$remainder\n";
             $line = "/** \@addtogroup $groupId $groupTitle \*/\n" .
                     "/** \@ingroup $groupId \*/\n" .
-                    "void on_${type}_${name}()$remainder\n";
-
-            #replace "on xyz" => "on_xyz()"
-            #$line =~ s/^[Oo]n\s(\S+)/on_$1\(\)/;
+                    "void on_${type}${fName}($parameters)$remainder\n";
 
             print STDERR "    L:$line\n";
         }
