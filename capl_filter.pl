@@ -29,6 +29,52 @@ $moduleName =~ s/\..*//;                # remove file extention
 $moduleName =~ s/[^a-zA-Z0-9_]/_/g;     # replace any special characters by '_'
 #$moduleName = uc($moduleName);          # module name capitalised
 
+# event cause table (expand if needed)
+# alsways add specific event before generic match
+# note: the 'keys' need to be lower case!
+my %eventMapping = (
+    'timer'                   => ['evTimer',      'Timer Events'],
+    'envvar'                  => ['evEnvVar',     'Environment Variable Events'],
+    'sysvar_update'           => ['evSysVar',     'System  Variable Events'],
+    'sysvar_change'           => ['evSysVar',     'System  Variable Events'],
+    'sysvar'                  => ['evSysVar',     'System  Variable Events'],
+    'key'                     => ['evKey',        'System  Variable Events'],
+
+    #system
+    'start'                   => ['evSystem',     'System Events '],
+    'stop'                    => ['evSystem',     'System Events '],
+    'prestart'                => ['evSystem',     'System Events '],
+    'prestop'                 => ['evSystem',     'System Events '],
+
+    #signals
+    'signal_update'           => ['evSignal',     'Signal Events'],
+    'signal_change'           => ['evSignal',     'Signal Events'],
+    'signal'                  => ['evSignal',     'Signal Events'],
+    'pdu'                     => ['evAUTOSAR',    'AUTOSAR Events'],
+    'diagrequestsent'         => ['evDiag',       'Diagnostics / UDS Events'],
+    'diagrequest'             => ['evDiag',       'Diagnostics / UDS Events'],
+    'diagresponse'            => ['evDiag',       'Diagnostics / UDS Events'],
+
+    # LIN events
+    'linmessage'              => ['evLIN',        'LIN Events'],      # old event type
+    'linframe'                => ['evLIN',        'LIN Events'],      # 
+    'linreceiveerror'         => ['evLIN',        'LIN Events'],      #
+    'lintransmerror'          => ['evLIN',        'LIN Events'],      #
+    'linslavetimeout'         => ['evLIN',        'LIN Events'],      #
+    'lincserror'              => ['evLIN',        'LIN Events'],      #
+    'linsyncerror'            => ['evLIN',        'LIN Events'],      #
+    'linschedulermodechange'  => ['evLIN',        'LIN Events'],      #
+    'linsleepmodeevent'       => ['evLIN',        'LIN Events'],      #
+    'linwakeupframe'          => ['evLIN',        'LIN Events'],      #
+
+    # CAN events
+    'message'                 => ['evCAN',        'CAN Events'],      #
+    'errorframe'              => ['evCAN',        'CAN Events'],      #
+    'busoff'                  => ['evCAN',        'CAN Events']       #
+);
+
+my $eventRegex = join('|', sort { length($b) <=> length($a) } keys %eventMapping);
+
 main();
 exit(0);
 
@@ -90,52 +136,53 @@ sub main
             }
         }
 
-#        #replace "on xyz abc" => "on_xyz_abc()"
-#        #if($line =~ /^[Oo]n\s(\S+)\s(\S+)/)
-#        if($line =~ /^[Oo]n\s+(\S+)\s+(\S+)/i)
-#        {
-#            $line =~ s/::`/_/g; #replace "::`" => "_"
-#            $line =~ s/::/_/g; #replace "::" => "_"
-#            $line =~ s/\*/asterisk/; #replace "*" => "asterisk"
-#
-#           # convert to function on_xyz abc() format
-#           #$line =~ s/^[Oo]n\s(\S+)\s(\S+)/on_$1 $2\(\)/;
-#           #$line =~ s/^[Oo]n\s+(\S+)\s+(\S+)(.*)/on_$1 $2\(\)$3/i;
-#            #$line =~ s/^[Oo]n\s+(\S+)\s+(\S+)(.*)/on_$1 $2\(\)$3/i;
-#            $line =~ s/^[Oo]n\s+(\S+)\s+(\S+)(.*)/void on_$1_$2\(\)$3/i;
-#        }
-
-        if ($line =~ /^[Oo]n\s+(timer|sysvar(?:_update|_change)?)\s+(\S+)(.*)/i) 
+        #if ($line =~ /^[Oo]n\s+(timer|sysvar(?:_update|_change)?)\s+(\S+)(.*)/i)
+        # \s* (\S*) makes second word optional
+        if ($line =~ /^[Oo]n\s+($eventRegex)(?:\s+(\S+))?(.*)/i) 
         {
-            my $type = lc($1); 	# typ in lower case (z.B. sysvar_update)
-            my $name = $2;     	# variable name
-            my $remainder = $3;	# line remainder (comments, etc.)
-            
-            # cleanup "::" for sysVar
-            $name =~ s/::`/_/g;
-            $name =~ s/::/_/g;
+            my $type = lc($1);          # typ in lower case (z.B. sysvar_update)
+            my $name = $2 || "";        # variable name, if none then keep empty
+            my $remainder = $3;         # line remainder (comments, etc.)
 
-            # define groupe und titel
-            my $groupId = "${moduleName}_" . (($type =~ /timer/) ? "Events_Timer" : "Events_SysVar");
+            if (!exists $eventMapping{$type})
+            {
+                print STDERR "FEHLER: Typ '$type' nicht im Mapping definiert! (Zeile: $.)\n";
+                # fallback 
+                $eventMapping{$type} = ['evMisc', 'Miscellaneous Events'];
+            }
+
+            # cleanup "::" for non-empty namesysVar
+            if ($name)
+            {
+                $name =~ s/::`/_/g;
+                $name =~ s/::/_/g;
+                #$name = "_$name";       # '_' as separator
+            }
+
+            # define group und titel
             my $MODULE = uc($moduleName);
-            my $groupTitle = ($type =~ /timer/) 
-                ? "$MODULE :: Timer Events"
-                : "$MODULE :: System Variable Events";
+            my $groupData  = $eventMapping{$type};
+            my $groupIdSuffix = $groupData->[0];            # e.g. evTimer
+            my $displayTitle  = $groupData->[1];            # e.g. Timer Events
 
-            # use @ingroup, to assigne the funtion to the correct group.
+            my $groupId     = "${moduleName}_$groupIdSuffix";
+            my $groupTitle  = "$MODULE $displayTitle";
+
+            # defining group with @addtogroup (Doxygen ignores doublicate definitions with @addtogroup)
+            # Use @ingroup, to assigne the funtion to the correct group.
             # A void on_${type}_$name insures uniqueness of the fuction from the variable.
-            $line = "/** \@ingroup $groupId \*/ \n" .
-                "void on_${type}_${name}()$remainder\n";
+            # Compose the line in one step to avoid overwriting.
+            print STDERR "[$MODULE] Group:$groupId Title:$groupTitle\n";
+            print STDERR "    Name:$name Rem:$remainder\n";
+            $line = "/** \@addtogroup $groupId $groupTitle \*/\n" .
+                    "/** \@ingroup $groupId \*/\n" .
+                    "void on_${type}_${name}()$remainder\n";
 
-            # definieren groupd (Doxygen ignores doublicate definitions with @addtogroup)
-            $line = "/** \@addtogroup $groupId $groupTitle \*/ \n" . $line;
+            #replace "on xyz" => "on_xyz()"
+            #$line =~ s/^[Oo]n\s(\S+)/on_$1\(\)/;
+
+            print STDERR "    L:$line\n";
         }
-
-        #replace "on xyz" => "on_xyz()"
-        $line =~ s/^[Oo]n\s(\S+)/on_$1\(\)/;
-
-        #replace "testcase xyz" => "testcase_xyz"
-        #$line =~ s/^testcase\s/testcase_/;
 
         print $line;
     }
