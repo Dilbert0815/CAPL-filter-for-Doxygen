@@ -87,16 +87,18 @@ sub main
         #replace "on xyz abc" => "on_xyz_abc()"
         if($line =~ /^[Oo]n\s(\S+)\s(\S+)/)
         {
+            $line =~ s/::`/_/g; #replace "::`" => "_"
             $line =~ s/::/_/g; #replace "::" => "_"
             $line =~ s/\*/asterisk/; #replace "*" => "asterisk"
-            $line =~ s/^[Oo]n\s(\S+)\s(\S+)/on_$1_$2\(\)/;
+            #$line =~ s/^[Oo]n\s(\S+)\s(\S+)/on_$1_$2\(\)/;
+            $line =~ s/^[Oo]n\s(\S+)\s(\S+)/on_$1 $2\(\)/;
         }
 
         #replace "on xyz" => "on_xyz()"
         $line =~ s/^[Oo]n\s(\S+)/on_$1\(\)/;
 
         #replace "testcase xyz" => "testcase_xyz"
-        $line =~ s/^testcase\s/testcase_/;
+        #$line =~ s/^testcase\s/testcase_/;
 
         print $line;
     }
